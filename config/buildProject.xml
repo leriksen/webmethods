@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  buildProject.xml — webMethods Deployer build instruction file
+  Consumed by: $WM_HOME/Deployer/bin/projectautomator.sh
+  Command:     ./projectautomator.sh -input buildProject.xml -log build.log
+
+  Environment variables (set by CI/CD or export before running):
+    WM_PROJECT_NAME       e.g. CommonFramework_Deploy_Project
+    WM_PROJECT_FOLDER     e.g. /opt/wmprojects/deployer
+    WM_SOURCE_HOST        Source IS hostname
+    WM_SOURCE_PORT        Source IS port (default 7321)
+    WM_SOURCE_USER        Source IS admin user
+    WM_SOURCE_PASSWORD    Source IS admin password (use encrypted form)
+    WM_TARGET_ALIAS       e.g. QA_IS
+    WM_TARGET_HOST        Target IS hostname
+    WM_TARGET_PORT        Target IS port (default 5555)
+    WM_TARGET_USER        Target IS admin user
+    WM_TARGET_PASSWORD    Target IS admin password (use encrypted form)
+    WM_ARCHIVE_NAME       e.g. CommonFramework_Archive_1.0
+    WM_DEPLOYMENT_SET     e.g. CommonFramework_Set
+    WM_PACKAGES           Comma-separated IS package names
+
+  Use scripts/generate_configs.sh to substitute variables before invoking.
+-->
+<ProjectAutomator>
+
+  <Project name="${WM_PROJECT_NAME}" folder="${WM_PROJECT_FOLDER}">
+
+    <Source>
+      <IntegrationServer
+        host="${WM_SOURCE_HOST}"
+        port="${WM_SOURCE_PORT}"
+        user="${WM_SOURCE_USER}"
+        password="${WM_SOURCE_PASSWORD}"/>
+    </Source>
+
+    <Targets>
+      <Target
+        alias="${WM_TARGET_ALIAS}"
+        host="${WM_TARGET_HOST}"
+        port="${WM_TARGET_PORT}"
+        user="${WM_TARGET_USER}"
+        password="${WM_TARGET_PASSWORD}"/>
+    </Targets>
+
+    <Build>
+      <Archive name="${WM_ARCHIVE_NAME}"/>
+    </Build>
+
+    <DeploymentSets>
+      <DeploymentSet name="${WM_DEPLOYMENT_SET}">
+        <!--
+          Add one <ISPackage> element per package to include.
+          These are replaced at runtime by generate_configs.sh from WM_PACKAGES.
+          Example:
+            <ISPackage name="Processing"/>
+            <ISPackage name="ArchiveUtils"/>
+        -->
+        ${WM_PACKAGES_XML}
+      </DeploymentSet>
+    </DeploymentSets>
+
+  </Project>
+
+</ProjectAutomator>

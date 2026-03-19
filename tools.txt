@@ -1,0 +1,1551 @@
+Required commands and useful automation tips for webMethods build and deploy using deployer.sh and projectautomator.sh on Linux, including typical scripting practices, environment setup, and verification commands. 
+
+Shape 
+
+🧩 Overview 
+
+There are two main command-line utilities for automating deployments in webMethods Deployer: 
+
+Tool 
+
+Purpose 
+
+Path 
+
+projectautomator.sh 
+
+Build Deployer project (archive) — creates the deployable build from source repository or IS packages. 
+
+$WM_HOME/Deployer/bin/projectautomator.sh 
+
+deployer.sh 
+
+Deploy project archive to target environments (e.g., Dev → QA → Prod). 
+
+$WM_HOME/Deployer/bin/deployer.sh 
+
+ 
+
+1️⃣ Environment Setup 
+
+Before running either script: 
+
+cd /webMethods/Deployer/bin 
+
+ 
+
+# Set Deployer home 
+
+export WM_HOME=/webMethods 
+
+export DEPLOYER_HOME=$WM_HOME/Deployer 
+
+export JAVA_HOME=$WM_HOME/jvm/jvm 
+
+export PATH=$JAVA_HOME/bin:$PATH 
+
+Validate: 
+
+java -version 
+
+ 
+
+2️⃣ Building a Project (Build/Archive Phase) 
+
+Use projectautomator.sh for command-line build automation. 
+It consumes an XML instruction file describing source environment, target project, and archive name. 
+
+🧾 Sample buildProject.xml 
+
+<ProjectAutomator> 
+
+  <Project name="CommonFramework_Deploy_Project" folder="/opt/wmprojects/deployer"> 
+
+    <Source> 
+
+      <IntegrationServer host="integrationhost.local" port="7321" user="Administrator" password="xxxxxx"/>
+
+    </Source> 
+
+ 
+
+    <Targets> 
+
+      <Target alias="FAT_IS" host="target" port="7421" user="Administrator" password="xxxxx"/>
+
+    </Targets> 
+
+ 
+
+    <Build> 
+
+      <Archive name="CommonFramework_Archive_1.0"/> 
+
+    </Build> 
+
+Archive 
+
+    <DeploymentSets> 
+
+      <DeploymentSet name="CommonFramework_Set"> 
+
+        <ISPackage name="Processing"/> 
+
+        <ISPackage name="ArchiveUtils"/> 
+
+      </DeploymentSet> 
+
+    </DeploymentSets> 
+
+  </Project> 
+
+</ProjectAutomator> 
+
+ 
+
+Command to Build Archive 
+
+./projectautomator.sh -input buildProject.xml -log buildProject.log 
+
+ 
+
+Logs: 
+
+Located in /webMethods/Deployer/logs or specified in -log 
+
+Check for BUILD SUCCESSFUL message 
+
+ 
+
+🔧 Optional Parameters 
+
+ 
+
+Parameter 
+
+Description 
+
+-input <file> 
+
+XML definition input 
+
+-log <file> 
+
+Custom log output path 
+
+-project <name> 
+
+Override project name 
+
+-build <archive_name> 
+
+Override archive name 
+
+ 
+
+3️⃣ Deploying the Archive (Deploy Phase) 
+
+Use deployer.sh for deployment automation. 
+
+🧾 Sample deployProject.xml 
+
+ 
+
+<Deployer> 
+
+  <DeployProject name="CommonFramework_Deploy_Project" folder="/opt/wmprojects/deployer"> 
+
+    <Archive name="CommonFramework_Archive_1.0"/> 
+
+    <MapTargets> 
+
+      <Map alias=“FAT_IS” host=“maptarget” port=“7421” user=“Administrator” password=“xxxxx”/>
+
+    </MapTargets> 
+
+    <DeployDeploymentSet name="CommonFramework_Set"/> 
+
+  </DeployProject> 
+
+</Deployer> 
+
+ 
+
+Command to Deploy 
+
+./deployer.sh -input deployProject.xml -log deployProject.log 
+
+ 
+
+Logs: 
+
+Check /webMethods/Deployer/logs or the specified log for: 
+
+ 
+
+Deployment completed successfully. 
+
+ 
+
+4️⃣ Common Automation Sequence (End-to-End Script) 
+
+Here’s how a full CI/CD job typically chains commands: 
+
+#!/bin/bash 
+
+# Example: deployer_build_deploy.sh 
+
+ 
+
+export WM_HOME=/webMethods 
+
+export DEPLOYER_HOME=$WM_HOME/Deployer 
+
+export PATH=$JAVA_HOME/bin:$PATH 
+
+cd $DEPLOYER_HOME/bin 
+
+ 
+
+echo "=== Building Deployer Archive ===" 
+
+./projectautomator.sh -input /opt/wmprojects/config/buildProject.xml -log /opt/wmprojects/logs/build.log 
+
+if grep -q "BUILD SUCCESSFUL" /opt/wmprojects/logs/build.log; then 
+
+    echo "Build successful" 
+
+else 
+
+    echo "Build failed"; exit 1 
+
+fi 
+
+ 
+
+echo "=== Deploying Archive to QA ===" 
+
+./deployer.sh -input /opt/wmprojects/config/deployProject.xml -log /opt/wmprojects/logs/deploy.log 
+
+if grep -q "Deployment completed successfully" /opt/wmprojects/logs/deploy.log; then 
+
+    echo "Deployment successful" 
+
+else 
+
+    echo "Deployment failed"; exit 1 
+
+fi 
+
+ 
+
+ Useful deployer.sh and projectautomator.sh Tips 
+
+Tip 
+
+Command/Note 
+
+List all arguments and options 
+
+./deployer.sh -help or ./projectautomator.sh -help 
+
+View available projects 
+
+Use Deployer UI → Projects tab (CLI listing not available directly) 
+
+Non-interactive mode 
+
+Ensure XML files contain all credentials and targets 
+
+Dry run (Simulation) 
+
+Add <Simulate>true</Simulate> in XML to test 
+
+Export project XML from UI 
+
+Use Deployer UI → “Export Project Automation Script” 
+
+Archive location 
+
+Default: $WM_HOME/IntegrationServer/replicate/deployer/archive 
+
+Back up before deploy 
+
+Copy target IS packages to a backup folder 
+
+Deployment log review 
+
+grep "ERROR" deployProject.log for quick checks 
+
+Headless execution in CI/CD 
+
+Ideal for Jenkins, Azure DevOps, GitLab runners 
+
+Parallel deployments 
+
+Avoid — Deployer locks the project folder 
+
+Troubleshooting 
+
+Increase log verbosity by editing $DEPLOYER_HOME/config/logging.cnf 
+
+ 
+
+6️⃣ Example Folder Structure (Recommended) 
+
+/opt/wmprojects/ 
+
+├── config/ 
+
+│   ├── buildProject.xml 
+
+│   └── deployProject.xml 
+
+├── logs/ 
+
+│   ├── build.log 
+
+│   └── deploy.log 
+
+├── deployer/ 
+
+│   └── CommonFramework_Deploy_Project/ 
+
+└── scripts/ 
+
+    └── deployer_build_deploy.sh 
+
+ 
+
+7️⃣ Bonus – CI/CD Integration Example (Jenkins Pipeline Snippet) 
+
+stage('Build and Deploy webMethods Code') { 
+
+    steps { 
+
+        sh ''' 
+
+        cd /webMethods/Deployer/bin 
+
+        ./projectautomator.sh -input /opt/wmprojects/config/buildProject.xml -log build.log 
+
+        ./deployer.sh -input /opt/wmprojects/config/deployProject.xml -log deploy.log 
+
+        ''' 
+
+    } 
+
+} 
+
+ 
+
+✅ Summary 
+
+Phase 
+
+Script 
+
+Core Command 
+
+Output 
+
+Build Archive 
+
+projectautomator.sh 
+
+./projectautomator.sh -input buildProject.xml -log build.log 
+
+.zip archive file 
+
+Deploy Archive 
+
+deployer.sh 
+
+./deployer.sh -input deployProject.xml -log deploy.log 
+
+Deployed packages/services on target IS 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Build.properties:  
+
+ 
+
+webMethods Deployer automation For repository-based deployments (i.e., building directly from VCS/Asset repository instead of from a live Integration Server). 
+
+ 
+
+The build.properties file is a key configuration file used by webMethods Deployer when you create builds (archives) from a repository, such as: 
+
+Asset Build Environment (ABE) outputs, 
+
+version control repositories (Git, SVN, etc.), 
+
+or exported packages/assets stored locally. 
+
+ 
+
+It provides metadata and paths to tell Deployer where to find build artifacts, configuration files, and repository settings. 
+
+ 
+
+àIn short — build.properties bridges the build artifacts (from repository) and the Deployer build script (projectautomator.sh), so the build can be created automatically without connecting to a live IS source. 
+
+ 
+
+Typical Location 
+
+/webMethods/Deployer/projects/<ProjectName>/build.properties 
+
+ 
+
+Or 
+
+ 
+
+/opt/wmprojects/deployer/build.properties 
+
+ 
+
+You can also pass it explicitly to projectautomator.sh using: 
+
+./projectautomator.sh -buildProperties /opt/wmprojects/config/build.properties 
+
+ 
+
+📄 Typical Contents of build.properties 
+
+Here’s a realistic, commented example of what build.properties contains for a repository-based deployment: 
+
+ 
+
+############################################################################### 
+
+# webMethods Deployer - build.properties 
+
+# Used for repository-based builds (no live Integration Server connection) 
+
+############################################################################### 
+
+ 
+
+# Repository Configuration 
+
+repo.type=local               # or vcs (git/svn) or assetRepo 
+
+repo.path=/opt/wmprojects/repository/export/ISPackages 
+
+# repo.url=https://git.company.com/scm/webmethods.git 
+
+# repo.branch=release/1.0.0 
+
+# repo.username=gituser 
+
+# repo.password=encrypted:<encrypted_pwd> 
+
+ 
+
+# Project Configuration 
+
+project.name=CommonFramework_Deploy_Project 
+
+project.folder=/opt/wmprojects/deployer 
+
+ 
+
+# Archive Metadata 
+
+archive.name=CommonFramework_Archive_1.0 
+
+archive.description=Deployment archive for Archive Management IS Packages 
+
+archive.output.dir=/opt/wmprojects/deployer/archives 
+
+ 
+
+# Deployment Set Details 
+
+deployments.set.name=CommonFramework_Set 
+
+deployments.set.description=Contains ArchiveProcessing, ArchiveUtils, and Config packages 
+
+ 
+
+# Assets to Include (paths are relative to repo.path) 
+
+packages=ArchiveProcessing,ArchiveUtils,ArchiveConfig 
+
+config.files=config/Archivedb.properties,config/logging.properties 
+
+ 
+
+# Target Alias (for deployer mapping later) 
+
+target.alias=QA_IS 
+
+ 
+
+# Build Output Control 
+
+build.log.dir=/opt/wmprojects/logs 
+
+build.timestamp=true 
+
+overwrite.archive=true 
+
+ 
+
+# Optional — Versioning / tagging info 
+
+build.version=1.0.0 
+
+build.label=Release_1.0 
+
+ 
+
+How It Helps — Purpose of Each Section 
+
+Section 
+
+Purpose 
+
+Repository Config 
+
+Tells Deployer where to pull the buildable components (e.g., IS packages, configurations, schemas). No need to connect to source IS. 
+
+Project Config 
+
+Defines the Deployer project name and folder to place the build metadata. 
+
+Archive Metadata 
+
+Defines how the output archive (the .zip) will be named and stored. 
+
+Deployment Set Details 
+
+Defines what logical set(s) of assets to include in this build (similar to a Deployment Set in the Deployer UI). 
+
+Assets to Include 
+
+Specifies the actual packages, configurations, and other deployable assets to package. 
+
+Target Alias 
+
+Used for pre-mapping the deployment to a target alias (optional, for convenience). 
+
+Build Output Control 
+
+Defines log/output directories, timestamping, and overwrite behaviors. 
+
+Versioning 
+
+Optional — helps maintain traceability and CI/CD automation. 
+
+ 
+
+How It Works During Build 
+
+When you run: 
+
+./projectautomator.sh -buildProperties  /opt/wmprojects/config/build.properties -log build.log 
+
+ 
+
+Internally, Deployer does: 
+
+Reads the build.properties file to locate repository artifacts. 
+
+Loads the project definition (if not existing, creates one). 
+
+Includes the listed IS packages/config files into a deployment set. 
+
+Builds the Deployer Archive (.zip) under: 
+
+ 
+
+/IntegrationServer/replicate/deployer/archive/ 
+
+ 
+
+or the directory defined in: 
+
+archive.output.dir 
+
+ 
+
+Logs details to /opt/wmprojects/logs/build.log. 
+
+Shape 
+
+ 
+
+Integration with ABE (Asset Build Environment) 
+
+If you use Asset Build Environment (ABE) to generate artifacts from a CI/CD pipeline, ABE produces output in: 
+
+ 
+
+/opt/wmprojects/repository/export/ 
+
+ 
+
+Then you can point your build.properties like: 
+
+repo.type=local 
+
+repo.path=/opt/wmprojects/repository/export/ 
+
+packages=MyAPIService,ArchiveProcessing 
+
+ 
+
+This allows Deployer to build directly from ABE outputs, completing a repository-based deployment cycle without needing any runtime servers. 
+
+Shape 
+
+Repository-Based Deployment Flow Summary 
+
+┌──────────────────────────────┐ 
+
+│   Source Repository (Git)    │ 
+
+│  └── IS packages, config     │ 
+
+└──────────────┬───────────────┘ 
+
+│ 
+
+▼ 
+
+┌──────────────────────────────┐ 
+
+│ Asset Build Environment (ABE)│ 
+
+│  └── Generates exportable zip │ 
+
+└──────────────┬───────────────┘ 
+
+│ 
+
+▼ 
+
+┌──────────────────────────────┐ 
+
+│ Deployer projectautomator.sh │ 
+
+│  └── Uses build.properties   │ 
+
+│      → Creates archive (.zip)│ 
+
+└──────────────┬───────────────┘ 
+
+│ 
+
+▼ 
+
+┌──────────────────────────────┐ 
+
+│ Deployer deployer.sh         │ 
+
+│  └── Deploys archive to IS   │ 
+
+└──────────────────────────────┘ 
+
+ 
+
+Best Practices & Tips 
+
+Best Practice 
+
+Reason 
+
+Keep build.properties under source control 
+
+Ensures traceability between repo versions and Deployer builds 
+
+Use relative paths inside repo 
+
+Makes builds portable across CI environments 
+
+Always include version and archive name dynamically 
+
+Helps avoid overwriting previous builds 
+
+Encrypt passwords if defined 
+
+Use wm.Encrypt service or Deployer’s encryption tool 
+
+Validate paths before running 
+
+Prevents “asset not found” errors during projectautomator.sh 
+
+Integrate checksum verification 
+
+To ensure artifact integrity from repo to build 
+
+Maintain separate properties files per environment 
+
+Example: build_dev.properties, build_qa.properties 
+
+ 
+
+Quick Example Command Sequence 
+
+# Step 1: Build archive from repository 
+
+./projectautomator.sh -buildProperties /opt/wmprojects/config/build.properties -log /opt/wmprojects/logs/build.log 
+
+ 
+
+# Step 2: Deploy built archive to target 
+
+./deployer.sh -input /opt/wmprojects/config/deployProject.xml -log /opt/wmprojects/logs/deploy.log 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Azure DevOps 
+
+ 
+
+Azure DevOps CI/CD for webMethods repository-based deployments - production-ready build.properties template that fits cleanly into your pipeline with dynamic variables (like build number, branch, and environment). 
+
+Shape 
+
+Parameterized build.properties file for Deployer’s projectautomator.sh, optimized for repository-based deployments — where webMethods Deployer builds the archive from ABE (Asset Build Environment) outputs or Git-synced artifacts. 
+
+Shape 
+
+Folder Structure (Recommended for Azure Pipelines) 
+
+/opt/wmprojects/ 
+
+├── config/ 
+
+│   ├── build.properties              # Template (this file) 
+
+│   ├── deployProject.xml             # For deployer.sh 
+
+├── artifacts/ 
+
+│   └── repoExport/                   # ABE output or git-exported IS packages 
+
+├── logs/ 
+
+│   └── build.log 
+
+└── scripts/ 
+
+    └── build_deployer_archive.sh     # Executes projectautomator.sh 
+
+Shape 
+
+ 
+
+Template: build.properties for Azure DevOps 
+
+💡 The ${{ variables.xxx }} placeholders are Azure DevOps runtime variables. 
+
+############################################################################### 
+
+# webMethods Deployer - build.properties for Azure DevOps 
+
+# Repository-based build automation (no source IS connection) 
+
+############################################################################### 
+
+ 
+
+########################### 
+
+# 1. Repository Settings 
+
+########################### 
+
+# Type of source repository: local (ABE output), git, svn, assetRepo 
+
+repo.type=local 
+
+ 
+
+# Location where ABE or SCM checkout artifacts exist 
+
+# Example: Azure DevOps agent copies build artifacts to $(Build.ArtifactStagingDirectory) 
+
+repo.path=${{ variables.repoPath }} 
+
+ 
+
+# Relative paths or package names inside repo.path 
+
+packages=${{ variables.packages }} 
+
+config.files=${{ variables.configFiles }} 
+
+ 
+
+########################### 
+
+# 2. Project Information 
+
+########################### 
+
+project.name=${{ variables.projectName }} 
+
+project.folder=${{ variables.projectFolder }} 
+
+ 
+
+########################### 
+
+# 3. Archive Metadata 
+
+########################### 
+
+# Dynamic naming using Azure DevOps variables 
+
+archive.name=${{ variables.archivePrefix }}_${{ variables.buildVersion }}_${{ variables.buildId }} 
+
+archive.description=Deployment archive generated during CI build run ${{ variables.buildId }} 
+
+archive.output.dir=${{ variables.archiveOutputDir }} 
+
+ 
+
+########################### 
+
+# 4. Deployment Set Definition 
+
+########################### 
+
+deployments.set.name=${{ variables.deploymentSetName }} 
+
+deployments.set.description=${{ variables.deploymentSetDesc }} 
+
+ 
+
+########################### 
+
+# 5. Target Environment Alias 
+
+########################### 
+
+target.alias=${{ variables.targetAlias }} 
+
+ 
+
+########################### 
+
+# 6. Logging and Output Control 
+
+########################### 
+
+build.log.dir=${{ variables.logDir }} 
+
+build.timestamp=true 
+
+overwrite.archive=true 
+
+ 
+
+########################### 
+
+# 7. Versioning / Traceability 
+
+########################### 
+
+build.version=${{ variables.buildVersion }} 
+
+build.label=${{ variables.buildLabel }} 
+
+branch.name=${{ variables.sourceBranchName }} 
+
+commit.id=${{ variables.sourceCommit }} 
+
+ 
+
+########################### 
+
+# 8. Optional Security (if connecting to repo directly) 
+
+########################### 
+
+# repo.username=${{ variables.repoUser }} 
+
+# repo.password=encrypted:${{ variables.repoPassword }} 
+
+Shape 
+
+ 
+
+Example Azure DevOps Variable Definitions 
+
+You can define these variables in: 
+
+Pipeline YAML under variables: section 
+or 
+
+Pipeline Library Variable Group (linked to secure Key Vault for passwords) 
+
+variables: 
+
+  repoPath: "$(Build.ArtifactStagingDirectory)/repoExport" 
+
+  packages: "ArchiveProcessing,ArchiveUtils,ArchiveConfig" 
+
+  configFiles: "config/Archivedb.properties,config/logging.properties" 
+
+  projectName: "CommonFramework_Deploy_Project" 
+
+  projectFolder: "/opt/wmprojects/deployer" 
+
+  archivePrefix: "CommonFramework" 
+
+  buildVersion: "$(Build.SourceBranchName)" 
+
+  buildId: "$(Build.BuildId)" 
+
+  deploymentSetName: "CommonFramework_Set" 
+
+  deploymentSetDesc: "CommonFramework Service Deployment" 
+
+  targetAlias: "QA_IS" 
+
+  archiveOutputDir: "/opt/wmprojects/deployer/archives" 
+
+  logDir: "/opt/wmprojects/logs" 
+
+  buildLabel: "$(Build.BuildNumber)" 
+
+  sourceBranchName: "$(Build.SourceBranchName)" 
+
+  sourceCommit: "$(Build.SourceVersion)" 
+
+Shape 
+
+Script to Run in Pipeline (build_deployer_archive.sh) 
+
+Create /opt/wmprojects/scripts/build_deployer_archive.sh: 
+
+#!/bin/bash 
+
+set -e 
+
+ 
+
+echo "=== Starting webMethods Deployer Build ===" 
+
+export WM_HOME=/webMethods 
+
+export DEPLOYER_HOME=$WM_HOME/Deployer 
+
+export JAVA_HOME=$WM_HOME/jvm/jvm 
+
+export PATH=$JAVA_HOME/bin:$PATH 
+
+ 
+
+cd $DEPLOYER_HOME/bin 
+
+ 
+
+./projectautomator.sh \ 
+
+  -buildProperties /opt/wmprojects/config/build.properties \ 
+
+  -log /opt/wmprojects/logs/build.log 
+
+ 
+
+if grep -q "BUILD SUCCESSFUL" /opt/wmprojects/logs/build.log; then 
+
+    echo "Deployer Build Successful" 
+
+else 
+
+    echo "Build Failed – check build.log" 
+
+    exit 1 
+
+fi 
+
+Make it executable: 
+
+chmod +x /opt/wmprojects/scripts/build_deployer_archive.sh 
+
+ 
+
+Shape 
+
+Azure DevOps Pipeline YAML (Build Stage Example) 
+
+trigger: 
+
+- main 
+
+ 
+
+pool: 
+
+  vmImage: RHEL-latest 
+
+ 
+
+variables: 
+
+  - group: webMethods-Deployer-Vars  # (Variable Group linked to Key Vault) 
+
+  - name: buildVersion 
+
+    value: "$(Build.SourceBranchName)" 
+
+ 
+
+stages: 
+
+  - stage: BuildArchive 
+
+    displayName: "Build Deployer Archive" 
+
+    jobs: 
+
+      - job: Build 
+
+        steps: 
+
+          - checkout: self 
+
+ 
+
+          - task: Bash@3 
+
+            displayName: "Run webMethods Deployer Build" 
+
+            inputs: 
+
+              targetType: 'inline' 
+
+              script: | 
+
+                echo "Running Deployer build..." 
+
+                /opt/wmprojects/scripts/build_deployer_archive.sh 
+
+Shape 
+
+Pro Tips for Azure DevOps Integration 
+
+Tip 
+
+Description 
+
+🧩 Use Variable Groups 
+
+Store environment paths, IS credentials, and repo info securely. 
+
+🔐 Use Key Vault integration 
+
+Store sensitive credentials (IS admin password, repo password). 
+
+🧾 Archive Output as Pipeline Artifact 
+
+Publish the generated .zip archive from /opt/wmprojects/deployer/archives/ using PublishPipelineArtifact@1. 
+
+🧹 Clean up workspace each run 
+
+Prevent stale project metadata in Deployer folder. 
+
+🧰 Use different project.folder per pipeline branch 
+
+Avoid concurrency issues if multiple builds run in parallel. 
+
+🚦 Add post-build verification 
+
+You can add a ping test or metadata validation after build before deployment. 
+
+Shape 
+
+ 
+
+Example Result 
+
+After the pipeline runs: 
+
+/opt/wmprojects/deployer/archives/ 
+
+└── CommonFramework_main_4567.zip   ← generated automatically 
+
+Log file: 
+
+/opt/wmprojects/logs/build.log 
+
+Deployer UI → will show a new build for the project with metadata mapped from your properties. 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Shape 
+
+End-to-end Azure DevOps automation flow for webMethods Deployer repository-based deployments. 
+
+We’ll cover: 
+
+1️⃣ A production-ready deployProject.xml template 
+2️⃣ The matching Azure DevOps deployment stage YAML 
+3️⃣ Optional post-deployment health-check verification 
+
+Shape 
+
+1️⃣ deployProject.xml — Automated Deployment Template 
+
+This XML file is consumed by deployer.sh and instructs webMethods Deployer how to deploy the built archive to the target Integration Server(s). 
+
+📄 Path: /opt/wmprojects/config/deployProject.xml 
+
+<?xml version="1.0" encoding="UTF-8"?> 
+
+<Deployer> 
+
+  <DeployProject name="${{ variables.projectName }}" folder="${{ variables.projectFolder }}"> 
+
+     
+
+    <!-- Archive previously created by projectautomator.sh --> 
+
+    <Archive name="${{ variables.archivePrefix }}_${{ variables.buildVersion }}_${{ variables.buildId }}"/> 
+
+ 
+
+    <!-- Target mapping --> 
+
+    <MapTargets> 
+
+      <Map alias="${{ variables.targetAlias }}" 
+
+           host="${{ variables.targetHost }}" 
+
+           port="${{ variables.targetPort }}" 
+
+           user="${{ variables.targetUser }}" 
+
+           password="${{ variables.targetPassword }}" /> 
+
+    </MapTargets> 
+
+ 
+
+    <!-- Deployment Set(s) to deploy --> 
+
+    <DeployDeploymentSet name="${{ variables.deploymentSetName }}" /> 
+
+ 
+
+    <!-- Optional: pre/post actions --> 
+
+    <Simulate>false</Simulate> <!-- set true for dry run --> 
+
+    <RestartAfterDeploy>false</RestartAfterDeploy> 
+
+    <ContinueOnError>false</ContinueOnError> 
+
+  </DeployProject> 
+
+</Deployer> 
+
+Shape 
+
+2️⃣ Azure DevOps Variables (add to Variable Group or YAML) 
+
+Secure values (like passwords) should come from Key Vault. 
+
+variables: 
+
+  # --- Common project variables --- 
+
+  projectName: "CommonFramework_Deploy_Project" 
+
+  projectFolder: "/opt/wmprojects/deployer" 
+
+  archivePrefix: "CommonFramework" 
+
+  buildVersion: "$(Build.SourceBranchName)" 
+
+  buildId: "$(Build.BuildId)" 
+
+  deploymentSetName: "CommonFramework_Set" 
+
+  targetAlias: "QA_IS" 
+
+ 
+
+  # --- Target environment details --- 
+
+  targetHost: "qa-is.company.com" 
+
+  targetPort: "5555" 
+
+  targetUser: "$(IS_Admin_User)"        # from Key Vault 
+
+  targetPassword: "$(IS_Admin_Password)" # from Key Vault (secret) 
+
+Shape 
+
+3️⃣ Script to Deploy (deploy_archive.sh) 
+
+📄 Path: /opt/wmprojects/scripts/deploy_archive.sh 
+
+#!/bin/bash 
+
+set -e 
+
+ 
+
+echo "=== Starting webMethods Deployer Deployment ===" 
+
+export WM_HOME=/webMethods 
+
+export DEPLOYER_HOME=$WM_HOME/Deployer 
+
+export JAVA_HOME=$WM_HOME/jvm/jvm 
+
+export PATH=$JAVA_HOME/bin:$PATH 
+
+ 
+
+cd $DEPLOYER_HOME/bin 
+
+ 
+
+./deployer.sh \ 
+
+  -input /opt/wmprojects/config/deployProject.xml \ 
+
+  -log /opt/wmprojects/logs/deploy.log 
+
+ 
+
+if grep -q "Deployment completed successfully" /opt/wmprojects/logs/deploy.log; then 
+
+    echo "Deployment Successful" 
+
+else 
+
+    echo "Deployment Failed – check deploy.log" 
+
+    grep "ERROR" /opt/wmprojects/logs/deploy.log || true 
+
+    exit 1 
+
+fi 
+
+Make executable: 
+
+chmod +x /opt/wmprojects/scripts/deploy_archive.sh 
+
+Shape 
+
+4️⃣ Azure DevOps Deployment Stage YAML 
+
+Add this stage after your “Build Archive” stage in the same pipeline. 
+
+- stage: DeployToQA 
+
+  displayName: "Deploy to QA Integration Server" 
+
+  dependsOn: BuildArchive 
+
+  condition: succeeded() 
+
+ 
+
+  jobs: 
+
+    - job: Deploy 
+
+      displayName: "Deploy webMethods Archive to QA" 
+
+      pool: 
+
+        vmImage: ubuntu-latest 
+
+ 
+
+      steps: 
+
+        - task: Bash@3 
+
+          displayName: "Run webMethods Deployer Deployment" 
+
+          inputs: 
+
+            targetType: 'inline' 
+
+            script: | 
+
+              echo "Running Deployer deployment..." 
+
+              /opt/wmprojects/scripts/deploy_archive.sh 
+
+ 
+
+        # --- Optional: Post-deployment Health Check --- 
+
+        - task: Bash@3 
+
+          displayName: "Post-Deployment Health Check" 
+
+          inputs: 
+
+            targetType: 'inline' 
+
+            script: | 
+
+              echo "Checking IS health..." 
+
+              curl -u "$(IS_Admin_User):$(IS_Admin_Password)" \ 
+
+                   http://qa-is.company.com:5555/invoke/wm.server/ping 
+
+Shape 
+
+5️⃣ Optional: Post-Deployment Verification Script 
+
+Create /opt/wmprojects/scripts/post_deploy_check.sh to validate target IS responsiveness: 
+
+#!/bin/bash 
+
+host=$1; port=$2; user=$3; pass=$4 
+
+status=$(curl -s -u $user:$pass http://$host:$port/invoke/wm.server/ping | grep -o "ok") 
+
+if [ "$status" == "ok" ]; then 
+
+    echo "Target IS is responding correctly." 
+
+else 
+
+    echo "Target IS ping failed! Check deployment." 
+
+    exit 1 
+
+fi 
+
+You can call this from the pipeline’s “Post-Deployment Health Check” step. 
+
+Shape 
+
+Pro Tips for Azure DevOps + Deployer 
+
+Tip 
+
+Description 
+
+🔐 Key Vault integration 
+
+Store IS_Admin_User, IS_Admin_Password, and other secrets securely. 
+
+🧩 Variable Groups per environment 
+
+Keep environment-specific targets isolated (Dev, QA, Prod). 
+
+🧾 Artifact publishing 
+
+Use PublishPipelineArtifact@1 to share the .zip archive between Build and Deploy stages. 
+
+🧰 Run Deployer on a dedicated agent 
+
+Ensure /webMethods is installed and licensed on that Linux agent. 
+
+🧹 Clean Deployer workspace each run 
+
+Avoid project metadata conflicts by cleaning $projectFolder. 
+
+📜 Logs collection 
+
+Upload /opt/wmprojects/logs/deploy.log as a pipeline artifact for traceability. 
+
+Shape 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+Final Flow Recap 
+
+┌───────────────┐ 
+
+│   Azure Repo  │ 
+
+└──────┬────────┘ 
+
+       │ 
+
+       ▼ 
+
+┌───────────────────────┐ 
+
+│ Build Stage           │ 
+
+│  projectautomator.sh  │ 
+
+│  → builds archive     │ 
+
+└──────┬────────────────┘ 
+
+       │ artifact (.zip) 
+
+       ▼ 
+
+┌───────────────────────┐ 
+
+│ Deploy Stage          │ 
+
+│  deployer.sh          │ 
+
+│  → deploys to QA IS   │ 
+
+│  → health check       │ 
+
+└───────────────────────┘ 
+
+

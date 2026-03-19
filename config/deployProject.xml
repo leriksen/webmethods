@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  deployProject.xml — webMethods Deployer deployment instruction file
+  Consumed by: $WM_HOME/Deployer/bin/deployer.sh
+  Command:     ./deployer.sh -input deployProject.xml -log deploy.log
+
+  Environment variables (set by CI/CD or export before running):
+    WM_PROJECT_NAME       Must match the project name used in buildProject.xml
+    WM_PROJECT_FOLDER     Must match the project folder used in buildProject.xml
+    WM_ARCHIVE_NAME       Must match the archive built by projectautomator.sh
+    WM_TARGET_ALIAS       Must match the alias defined in buildProject.xml
+    WM_TARGET_HOST        Target IS hostname
+    WM_TARGET_PORT        Target IS port (default 5555)
+    WM_TARGET_USER        Target IS admin user
+    WM_TARGET_PASSWORD    Target IS admin password (use encrypted form)
+    WM_DEPLOYMENT_SET     Deployment set name to deploy
+    WM_SIMULATE           Set to true for dry run, false for live deployment
+    WM_RESTART_AFTER      Set to true to restart IS after deploy
+    WM_CONTINUE_ON_ERROR  Set to true to continue on non-fatal errors
+
+  Use scripts/generate_configs.sh to substitute variables before invoking.
+-->
+<Deployer>
+
+  <DeployProject name="${WM_PROJECT_NAME}" folder="${WM_PROJECT_FOLDER}">
+
+    <!-- Archive previously created by projectautomator.sh -->
+    <Archive name="${WM_ARCHIVE_NAME}"/>
+
+    <!-- Map the deployment target alias to a live Integration Server -->
+    <MapTargets>
+      <Map
+        alias="${WM_TARGET_ALIAS}"
+        host="${WM_TARGET_HOST}"
+        port="${WM_TARGET_PORT}"
+        user="${WM_TARGET_USER}"
+        password="${WM_TARGET_PASSWORD}"/>
+    </MapTargets>
+
+    <!-- Deployment set to apply -->
+    <DeployDeploymentSet name="${WM_DEPLOYMENT_SET}"/>
+
+    <!-- Deployment behaviour -->
+    <Simulate>${WM_SIMULATE}</Simulate>                   <!-- true = dry run, false = live -->
+    <RestartAfterDeploy>${WM_RESTART_AFTER}</RestartAfterDeploy>
+    <ContinueOnError>${WM_CONTINUE_ON_ERROR}</ContinueOnError>
+
+  </DeployProject>
+
+</Deployer>
