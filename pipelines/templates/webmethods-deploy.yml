@@ -1,0 +1,296 @@
+# pipelines/templates/webmethods-deploy.yml
+#
+# Reusable extends template for webMethods Deployer CI/CD.
+# Called from azure-pipelines.yml via the "extends" mechanism.
+#
+# Stages defined here:
+#   1. BuildArchive — generate configs, run projectautomator.sh, publish archive
+#   2. DeployToQA   — download archive, deploy via deployer.sh, health check
+
+parameters:
+
+  # ── Agent ──────────────────────────────────────────────────────────────────
+  - name: agentPool
+    type: string
+    default: webmethods-agents
+
+  # ── webMethods installation ─────────────────────────────────────────────────
+  - name: wmHome
+    type: string
+    default: /webMethods
+
+  # ── Project ─────────────────────────────────────────────────────────────────
+  - name: projectName
+    type: string
+  - name: projectFolder
+    type: string
+    default: /opt/wmprojects/deployer
+
+  # ── Source IS (live-IS build mode; leave blank for repo-based builds) ───────
+  - name: sourceHost
+    type: string
+    default: ''
+  - name: sourcePort
+    type: string
+    default: ''
+  - name: sourceUser
+    type: string
+    default: ''
+  - name: sourcePassword
+    type: string
+    default: ''
+
+  # ── Target IS ───────────────────────────────────────────────────────────────
+  - name: targetAlias
+    type: string
+  - name: targetHost
+    type: string
+  - name: targetPort
+    type: string
+    default: '5555'
+  - name: targetUser
+    type: string
+  - name: targetPassword
+    type: string
+
+  # ── Archive ──────────────────────────────────────────────────────────────────
+  - name: archivePrefix
+    type: string
+  - name: archiveOutputDir
+    type: string
+    default: /opt/wmprojects/deployer/archives
+
+  # ── Deployment set & packages ───────────────────────────────────────────────
+  - name: deploymentSetName
+    type: string
+  - name: deploymentSetDesc
+    type: string
+    default: ''
+  - name: packages
+    type: string
+  - name: configFiles
+    type: string
+    default: ''
+
+  # ── Repository (build.properties) ───────────────────────────────────────────
+  - name: repoType
+    type: string
+    default: local
+  - name: repoPath
+    type: string
+
+  # ── Paths on agent ───────────────────────────────────────────────────────────
+  - name: wmConfigDir
+    type: string
+    default: /opt/wmprojects/config
+  - name: logDir
+    type: string
+    default: /opt/wmprojects/logs
+
+  # ── Deployment behaviour ─────────────────────────────────────────────────────
+  - name: simulate
+    type: boolean
+    default: false
+  - name: restartAfterDeploy
+    type: boolean
+    default: false
+  - name: continueOnError
+    type: boolean
+    default: false
+
+  # ── Post-deploy health check ─────────────────────────────────────────────────
+  - name: pingRetries
+    type: number
+    default: 5
+  - name: pingDelay
+    type: number
+    default: 10
+
+  # ── Azure DevOps environment name (for approval gates) ──────────────────────
+  - name: deployEnvironment
+    type: string
+    default: webmethods-qa
+
+################################################################################
+stages:
+
+  ################################################################################
+  # Stage 1: Build Deployer Archive
+  ################################################################################
+  - stage: BuildArchive
+    displayName: Build Deployer Archive
+    pool:
+      name: ${{ parameters.agentPool }}
+
+    jobs:
+      - job: Build
+        displayName: Run projectautomator.sh
+
+        steps:
+          - checkout: self
+
+          - task: Bash@3
+            displayName: Generate Deployer Config Files
+            inputs:
+              targetType: filePath
+              filePath: scripts/generate_configs.sh
+            env:
+              WM_HOME: ${{ parameters.wmHome }}
+              WM_CONFIG_OUTPUT_DIR: ${{ parameters.wmConfigDir }}
+              WM_LOG_DIR: ${{ parameters.logDir }}
+
+              WM_PROJECT_NAME: ${{ parameters.projectName }}
+              WM_PROJECT_FOLDER: ${{ parameters.projectFolder }}
+
+              WM_SOURCE_HOST: ${{ parameters.sourceHost }}
+              WM_SOURCE_PORT: ${{ parameters.sourcePort }}
+              WM_SOURCE_USER: ${{ parameters.sourceUser }}
+              WM_SOURCE_PASSWORD: ${{ parameters.sourcePassword }}
+
+              WM_TARGET_ALIAS: ${{ parameters.targetAlias }}
+              WM_TARGET_HOST: ${{ parameters.targetHost }}
+              WM_TARGET_PORT: ${{ parameters.targetPort }}
+              WM_TARGET_USER: ${{ parameters.targetUser }}
+              WM_TARGET_PASSWORD: ${{ parameters.targetPassword }}
+
+              WM_ARCHIVE_NAME: ${{ parameters.archivePrefix }}_$(Build.SourceBranchName)_$(Build.BuildId)
+              ARCHIVE_PREFIX: ${{ parameters.archivePrefix }}
+              BUILD_VERSION: $(Build.SourceBranchName)
+              BUILD_ID: $(Build.BuildId)
+              ARCHIVE_OUTPUT_DIR: ${{ parameters.archiveOutputDir }}
+
+              WM_DEPLOYMENT_SET: ${{ parameters.deploymentSetName }}
+              WM_DEPLOYMENT_SET_DESC: ${{ parameters.deploymentSetDesc }}
+              WM_PACKAGES: ${{ parameters.packages }}
+              WM_CONFIG_FILES: ${{ parameters.configFiles }}
+
+              REPO_TYPE: ${{ parameters.repoType }}
+              REPO_PATH: ${{ parameters.repoPath }}
+
+              BUILD_LABEL: $(Build.BuildNumber)
+              SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
+              SOURCE_COMMIT: $(Build.SourceVersion)
+              LOG_DIR: ${{ parameters.logDir }}
+
+          - task: Bash@3
+            displayName: Run webMethods Deployer Build
+            inputs:
+              targetType: filePath
+              filePath: scripts/build_deployer_archive.sh
+            env:
+              WM_HOME: ${{ parameters.wmHome }}
+              WM_CONFIG_DIR: ${{ parameters.wmConfigDir }}
+              WM_LOG_DIR: ${{ parameters.logDir }}
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish Deployer Archive
+            inputs:
+              targetPath: ${{ parameters.archiveOutputDir }}
+              artifact: DeployerArchive
+              publishLocation: pipeline
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish Build Log
+            condition: always()
+            inputs:
+              targetPath: ${{ parameters.logDir }}/build.log
+              artifact: BuildLog
+              publishLocation: pipeline
+
+  ################################################################################
+  # Stage 2: Deploy
+  ################################################################################
+  - stage: Deploy
+    displayName: Deploy to ${{ parameters.deployEnvironment }}
+    dependsOn: BuildArchive
+    condition: succeeded()
+    pool:
+      name: ${{ parameters.agentPool }}
+
+    jobs:
+      - deployment: DeployIS
+        displayName: Deploy webMethods Archive
+        environment: ${{ parameters.deployEnvironment }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+
+                - task: DownloadPipelineArtifact@2
+                  displayName: Download Deployer Archive
+                  inputs:
+                    artifact: DeployerArchive
+                    path: ${{ parameters.archiveOutputDir }}
+
+                - task: Bash@3
+                  displayName: Generate Deploy Config Files
+                  inputs:
+                    targetType: filePath
+                    filePath: $(Pipeline.Workspace)/s/scripts/generate_configs.sh
+                  env:
+                    WM_HOME: ${{ parameters.wmHome }}
+                    WM_CONFIG_OUTPUT_DIR: ${{ parameters.wmConfigDir }}
+                    WM_LOG_DIR: ${{ parameters.logDir }}
+
+                    WM_PROJECT_NAME: ${{ parameters.projectName }}
+                    WM_PROJECT_FOLDER: ${{ parameters.projectFolder }}
+
+                    WM_TARGET_ALIAS: ${{ parameters.targetAlias }}
+                    WM_TARGET_HOST: ${{ parameters.targetHost }}
+                    WM_TARGET_PORT: ${{ parameters.targetPort }}
+                    WM_TARGET_USER: ${{ parameters.targetUser }}
+                    WM_TARGET_PASSWORD: ${{ parameters.targetPassword }}
+
+                    WM_ARCHIVE_NAME: ${{ parameters.archivePrefix }}_$(Build.SourceBranchName)_$(Build.BuildId)
+                    ARCHIVE_PREFIX: ${{ parameters.archivePrefix }}
+                    BUILD_VERSION: $(Build.SourceBranchName)
+                    BUILD_ID: $(Build.BuildId)
+                    ARCHIVE_OUTPUT_DIR: ${{ parameters.archiveOutputDir }}
+
+                    WM_DEPLOYMENT_SET: ${{ parameters.deploymentSetName }}
+                    WM_DEPLOYMENT_SET_DESC: ${{ parameters.deploymentSetDesc }}
+                    WM_PACKAGES: ${{ parameters.packages }}
+                    WM_CONFIG_FILES: ${{ parameters.configFiles }}
+
+                    WM_SIMULATE: ${{ parameters.simulate }}
+                    WM_RESTART_AFTER: ${{ parameters.restartAfterDeploy }}
+                    WM_CONTINUE_ON_ERROR: ${{ parameters.continueOnError }}
+
+                    REPO_TYPE: ${{ parameters.repoType }}
+                    REPO_PATH: ${{ parameters.repoPath }}
+
+                    BUILD_LABEL: $(Build.BuildNumber)
+                    SOURCE_BRANCH_NAME: $(Build.SourceBranchName)
+                    SOURCE_COMMIT: $(Build.SourceVersion)
+                    LOG_DIR: ${{ parameters.logDir }}
+
+                - task: Bash@3
+                  displayName: Run webMethods Deployer Deployment
+                  inputs:
+                    targetType: filePath
+                    filePath: $(Pipeline.Workspace)/s/scripts/deploy_archive.sh
+                  env:
+                    WM_HOME: ${{ parameters.wmHome }}
+                    WM_CONFIG_DIR: ${{ parameters.wmConfigDir }}
+                    WM_LOG_DIR: ${{ parameters.logDir }}
+
+                - task: Bash@3
+                  displayName: Post-Deployment Health Check
+                  inputs:
+                    targetType: filePath
+                    filePath: $(Pipeline.Workspace)/s/scripts/post_deploy_check.sh
+                  env:
+                    WM_TARGET_HOST: ${{ parameters.targetHost }}
+                    WM_TARGET_PORT: ${{ parameters.targetPort }}
+                    WM_TARGET_USER: ${{ parameters.targetUser }}
+                    WM_TARGET_PASSWORD: ${{ parameters.targetPassword }}
+                    WM_PING_RETRIES: ${{ parameters.pingRetries }}
+                    WM_PING_DELAY: ${{ parameters.pingDelay }}
+
+                - task: PublishPipelineArtifact@1
+                  displayName: Publish Deploy Log
+                  condition: always()
+                  inputs:
+                    targetPath: ${{ parameters.logDir }}/deploy.log
+                    artifact: DeployLog
+                    publishLocation: pipeline

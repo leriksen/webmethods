@@ -1,16 +1,15 @@
 # azure-pipelines.yml — webMethods Deployer CI/CD Pipeline
 #
-# Stages:
-#   1. BuildArchive  — generates Deployer archive from repo artifacts
-#   2. DeployToQA    — deploys archive to QA Integration Server
+# All stages and steps are defined in:
+#   pipelines/templates/webmethods-deploy.yml
 #
-# Variable Groups (configure in Azure DevOps Library):
-#   webMethods-Common   — project-level variables (see "variables" section below)
-#   webMethods-QA       — QA environment credentials (linked to Key Vault)
+# Variable Groups (configure in Azure DevOps Library → Variable groups):
+#   webMethods-Common — non-secret project variables
+#   webMethods-QA     — environment credentials linked to Key Vault
 #
-# Required Key Vault secrets (in webMethods-QA variable group):
+# Required Key Vault secrets (surfaced via webMethods-QA variable group):
 #   IS-Admin-User     — Integration Server admin username
-#   IS-Admin-Password — Integration Server admin password (secret)
+#   IS-Admin-Password — Integration Server admin password
 
 trigger:
   branches:
@@ -23,217 +22,59 @@ pr:
     include:
       - main
 
-pool:
-  # Replace with a self-hosted Linux agent that has webMethods installed.
-  # The agent must have /webMethods accessible and JAVA_HOME configured.
-  name: webmethods-agents
-  # vmImage: ubuntu-latest  # use only if webMethods is pre-installed on hosted agent
-
 variables:
   - group: webMethods-Common
-  - group: webMethods-QA        # contains IS_Admin_User, IS_Admin_Password from Key Vault
+  - group: webMethods-QA
 
-  # Override individual variables here as needed
-  - name: buildVersion
-    value: $(Build.SourceBranchName)
-  - name: buildId
-    value: $(Build.BuildId)
-  - name: sourceBranchName
-    value: $(Build.SourceBranchName)
-  - name: sourceCommit
-    value: $(Build.SourceVersion)
-  - name: buildLabel
-    value: $(Build.BuildNumber)
-  - name: repoPath
-    value: $(Build.ArtifactStagingDirectory)/repoExport
-  - name: archiveOutputDir
-    value: /opt/wmprojects/deployer/archives
-  - name: logDir
-    value: /opt/wmprojects/logs
-  - name: wmConfigDir
-    value: /opt/wmprojects/config
+extends:
+  template: templates/webmethods-deploy.yml
+  parameters:
+    # ── Agent ────────────────────────────────────────────────────────────────
+    agentPool: webmethods-agents
 
-################################################################################
-# Stage 1: Build Deployer Archive
-################################################################################
-stages:
-  - stage: BuildArchive
-    displayName: "Build Deployer Archive"
+    # ── Project ──────────────────────────────────────────────────────────────
+    projectName: $(projectName)
+    projectFolder: /opt/wmprojects/deployer
 
-    jobs:
-      - job: Build
-        displayName: "Run projectautomator.sh"
+    # ── Source IS (leave blank for repo-based/ABE builds) ────────────────────
+    sourceHost: $(sourceHost)
+    sourcePort: $(sourcePort)
+    sourceUser: $(IS_Admin_User)
+    sourcePassword: $(IS_Admin_Password)
 
-        steps:
-          - checkout: self
+    # ── Target IS ────────────────────────────────────────────────────────────
+    targetAlias: $(targetAlias)
+    targetHost: $(targetHost)
+    targetPort: $(targetPort)
+    targetUser: $(IS_Admin_User)
+    targetPassword: $(IS_Admin_Password)
 
-          # Generate substituted config files from templates
-          - task: Bash@3
-            displayName: "Generate Deployer Config Files"
-            inputs:
-              targetType: filePath
-              filePath: scripts/generate_configs.sh
-            env:
-              WM_HOME: /webMethods
-              WM_CONFIG_OUTPUT_DIR: $(wmConfigDir)
-              WM_LOG_DIR: $(logDir)
+    # ── Archive ───────────────────────────────────────────────────────────────
+    archivePrefix: $(archivePrefix)
+    archiveOutputDir: /opt/wmprojects/deployer/archives
 
-              # Project
-              WM_PROJECT_NAME: $(projectName)
-              WM_PROJECT_FOLDER: /opt/wmprojects/deployer
+    # ── Deployment set & packages ─────────────────────────────────────────────
+    deploymentSetName: $(deploymentSetName)
+    deploymentSetDesc: $(deploymentSetDesc)
+    packages: $(packages)
+    configFiles: $(configFiles)
 
-              # Source IS (only needed for buildProject.xml live-IS mode)
-              WM_SOURCE_HOST: $(sourceHost)
-              WM_SOURCE_PORT: $(sourcePort)
-              WM_SOURCE_USER: $(IS_Admin_User)
-              WM_SOURCE_PASSWORD: $(IS_Admin_Password)
+    # ── Repository ────────────────────────────────────────────────────────────
+    repoType: local
+    repoPath: $(Build.ArtifactStagingDirectory)/repoExport
 
-              # Target
-              WM_TARGET_ALIAS: $(targetAlias)
-              WM_TARGET_HOST: $(targetHost)
-              WM_TARGET_PORT: $(targetPort)
-              WM_TARGET_USER: $(IS_Admin_User)
-              WM_TARGET_PASSWORD: $(IS_Admin_Password)
+    # ── Paths on agent ────────────────────────────────────────────────────────
+    wmConfigDir: /opt/wmprojects/config
+    logDir: /opt/wmprojects/logs
 
-              # Archive
-              WM_ARCHIVE_NAME: $(archivePrefix)_$(buildVersion)_$(buildId)
-              ARCHIVE_PREFIX: $(archivePrefix)
-              BUILD_VERSION: $(buildVersion)
-              BUILD_ID: $(buildId)
-              ARCHIVE_OUTPUT_DIR: $(archiveOutputDir)
+    # ── Deployment behaviour ──────────────────────────────────────────────────
+    simulate: false
+    restartAfterDeploy: false
+    continueOnError: false
 
-              # Deployment set & packages
-              WM_DEPLOYMENT_SET: $(deploymentSetName)
-              WM_DEPLOYMENT_SET_DESC: $(deploymentSetDesc)
-              WM_PACKAGES: $(packages)
-              WM_CONFIG_FILES: $(configFiles)
+    # ── Health check ──────────────────────────────────────────────────────────
+    pingRetries: 5
+    pingDelay: 10
 
-              # Repo (for build.properties)
-              REPO_TYPE: local
-              REPO_PATH: $(repoPath)
-
-              # Traceability
-              BUILD_LABEL: $(buildLabel)
-              SOURCE_BRANCH_NAME: $(sourceBranchName)
-              SOURCE_COMMIT: $(sourceCommit)
-              LOG_DIR: $(logDir)
-
-          # Run the build
-          - task: Bash@3
-            displayName: "Run webMethods Deployer Build"
-            inputs:
-              targetType: filePath
-              filePath: scripts/build_deployer_archive.sh
-            env:
-              WM_HOME: /webMethods
-              WM_CONFIG_DIR: $(wmConfigDir)
-              WM_LOG_DIR: $(logDir)
-
-          # Publish archive as pipeline artifact for use by Deploy stage
-          - task: PublishPipelineArtifact@1
-            displayName: "Publish Deployer Archive"
-            inputs:
-              targetPath: $(archiveOutputDir)
-              artifact: DeployerArchive
-              publishLocation: pipeline
-
-          # Publish build log for traceability
-          - task: PublishPipelineArtifact@1
-            displayName: "Publish Build Log"
-            condition: always()
-            inputs:
-              targetPath: $(logDir)/build.log
-              artifact: BuildLog
-              publishLocation: pipeline
-
-################################################################################
-# Stage 2: Deploy to QA
-################################################################################
-  - stage: DeployToQA
-    displayName: "Deploy to QA Integration Server"
-    dependsOn: BuildArchive
-    condition: succeeded()
-
-    jobs:
-      - deployment: DeployQA
-        displayName: "Deploy webMethods Archive to QA"
-        environment: webmethods-qa       # creates approval gate in Azure DevOps Environments
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                # Download the archive produced by the Build stage
-                - task: DownloadPipelineArtifact@2
-                  displayName: "Download Deployer Archive"
-                  inputs:
-                    artifact: DeployerArchive
-                    path: $(archiveOutputDir)
-
-                # Re-generate configs with deploy-specific flags
-                - task: Bash@3
-                  displayName: "Generate Deploy Config Files"
-                  inputs:
-                    targetType: filePath
-                    filePath: $(Pipeline.Workspace)/s/scripts/generate_configs.sh
-                  env:
-                    WM_HOME: /webMethods
-                    WM_CONFIG_OUTPUT_DIR: $(wmConfigDir)
-                    WM_PROJECT_NAME: $(projectName)
-                    WM_PROJECT_FOLDER: /opt/wmprojects/deployer
-                    WM_TARGET_ALIAS: $(targetAlias)
-                    WM_TARGET_HOST: $(targetHost)
-                    WM_TARGET_PORT: $(targetPort)
-                    WM_TARGET_USER: $(IS_Admin_User)
-                    WM_TARGET_PASSWORD: $(IS_Admin_Password)
-                    WM_ARCHIVE_NAME: $(archivePrefix)_$(buildVersion)_$(buildId)
-                    ARCHIVE_PREFIX: $(archivePrefix)
-                    BUILD_VERSION: $(buildVersion)
-                    BUILD_ID: $(buildId)
-                    ARCHIVE_OUTPUT_DIR: $(archiveOutputDir)
-                    WM_DEPLOYMENT_SET: $(deploymentSetName)
-                    WM_DEPLOYMENT_SET_DESC: $(deploymentSetDesc)
-                    WM_PACKAGES: $(packages)
-                    WM_CONFIG_FILES: $(configFiles)
-                    WM_SIMULATE: "false"
-                    WM_RESTART_AFTER: "false"
-                    WM_CONTINUE_ON_ERROR: "false"
-                    REPO_TYPE: local
-                    REPO_PATH: $(repoPath)
-                    BUILD_LABEL: $(buildLabel)
-                    SOURCE_BRANCH_NAME: $(sourceBranchName)
-                    SOURCE_COMMIT: $(sourceCommit)
-                    LOG_DIR: $(logDir)
-
-                # Run deployment
-                - task: Bash@3
-                  displayName: "Run webMethods Deployer Deployment"
-                  inputs:
-                    targetType: filePath
-                    filePath: $(Pipeline.Workspace)/s/scripts/deploy_archive.sh
-                  env:
-                    WM_HOME: /webMethods
-                    WM_CONFIG_DIR: $(wmConfigDir)
-                    WM_LOG_DIR: $(logDir)
-
-                # Post-deployment health check
-                - task: Bash@3
-                  displayName: "Post-Deployment Health Check"
-                  inputs:
-                    targetType: filePath
-                    filePath: $(Pipeline.Workspace)/s/scripts/post_deploy_check.sh
-                  env:
-                    WM_TARGET_HOST: $(targetHost)
-                    WM_TARGET_PORT: $(targetPort)
-                    WM_TARGET_USER: $(IS_Admin_User)
-                    WM_TARGET_PASSWORD: $(IS_Admin_Password)
-                    WM_PING_RETRIES: "5"
-                    WM_PING_DELAY: "10"
-
-                # Publish deploy log regardless of outcome
-                - task: PublishPipelineArtifact@1
-                  displayName: "Publish Deploy Log"
-                  condition: always()
-                  inputs:
-                    targetPath: $(logDir)/deploy.log
-                    artifact: DeployLog
-                    publishLocation: pipeline
+    # ── Environment (approval gate) ───────────────────────────────────────────
+    deployEnvironment: webmethods-qa
